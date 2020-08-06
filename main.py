@@ -6,7 +6,6 @@
 """
 
 from gl import Render
-from utils import gl_color
 
 render = Render()
 #render.load("./sphere.obj", translate=(400, 400, 0), scale=(600, 600, 1000))

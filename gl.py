@@ -5,8 +5,8 @@
     gl.py - all logic to create a bmp file
 """
 
-from utils.gl_color import *
-from utils.gl_encoder import *
+from utils.color import *
+from utils.encoder import *
 from obj import Obj
 import random
 

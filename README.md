@@ -1,5 +1,5 @@
-# SR4: Flat Shading
+# Lab2: Shaders
 
-Simple Render 4, creates .bmp files from .obj models applying Flat Shading. Test model was: Sonic The Hedgehog.
+Simple Render, creates bmp files with a rendered planet.
 
-![out](https://github.com/gusmendez99/Graphics_SR4_Flat_Shading/blob/master/out_flat_shading.bmp?raw=true)
+![out](https://github.com/gusmendez99/Graphics_Lab2_Shaders/blob/master/planet.bmp?raw=true)
