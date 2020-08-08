@@ -6,4 +6,4 @@ Simple Render, creates bmp files with a rendered planet: Saturn.
 ![out](https://github.com/gusmendez99/Graphics_Lab2_Shaders/blob/master/saturn.png?raw=true)
 
 ##### Render
-![out](https://github.com/gusmendez99/Graphics_Lab2_Shaders/blob/master/planet.bmp?raw=true)
+![out](https://github.com/gusmendez99/Graphics_Lab2_Shaders/blob/master/saturn.bmp?raw=true)

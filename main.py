@@ -11,4 +11,4 @@ from utils.constants import *
 render = Render()
 render.load("./ring.obj", translate=(400, 400, 0), scale=(220, 75, 200), shape=RING)
 render.load("./sphere.obj", translate=(400, 400, 0), scale=(250, 250, 350), shape=PLANET)
-render.finish(filename="planet.bmp")
+render.finish(filename="saturn.bmp")
