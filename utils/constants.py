@@ -1,0 +1,2 @@
+PLANET = "PLANET"
+RING = "RING"
