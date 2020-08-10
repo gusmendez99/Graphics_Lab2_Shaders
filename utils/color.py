@@ -5,7 +5,8 @@
     gl-color.py - simple color functions
 """
 
-def normalizeColorArray(colors_array):
+
+def normalize_color(colors_array):
     return [round(i * 255) for i in colors_array]
 
 
