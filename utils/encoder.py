@@ -7,11 +7,11 @@
 
 import struct
 
-def char(myChar):
-		return struct.pack('=c', myChar.encode('ascii'))
+def char(my_char):
+    return struct.pack("=c", my_char.encode("ascii"))
 
-def word(myChar):
-	return struct.pack('=h', myChar)
-	
-def dword(myChar):
-	return struct.pack('=l', myChar)
+def word(my_char):
+    return struct.pack("=h", my_char)
+
+def dword(my_char):
+    return struct.pack("=l", my_char)

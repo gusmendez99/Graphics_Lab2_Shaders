@@ -6,110 +6,11 @@
 """
 
 from utils.color import *
+from utils.math import *
 from utils.encoder import *
 from utils.constants import *
 
 from obj import Obj
-import random
-
-from collections import namedtuple
-
-V2 = namedtuple("Vertex2", ["x", "y"])
-V3 = namedtuple("Vertex3", ["x", "y", "z"])
-
-# ===============================================================
-# Math utils - by @denn1s
-# ===============================================================
-
-
-def sum(v0, v1):
-    """
-        Input: 2 size 3 vectors
-        Output: Size 3 vector with the per element sum
-    """
-    return V3(v0.x + v1.x, v0.y + v1.y, v0.z + v1.z)
-
-
-def sub(v0, v1):
-    """
-        Input: 2 size 3 vectors
-        Output: Size 3 vector with the per element substraction
-    """
-    return V3(v0.x - v1.x, v0.y - v1.y, v0.z - v1.z)
-
-
-def mul(v0, k):
-    """
-        Input: 2 size 3 vectors
-        Output: Size 3 vector with the per element multiplication
-    """
-    return V3(v0.x * k, v0.y * k, v0.z * k)
-
-
-def dot(v0, v1):
-    """
-        Input: 2 size 3 vectors
-        Output: Scalar with the dot product
-    """
-    return v0.x * v1.x + v0.y * v1.y + v0.z * v1.z
-
-
-def length(v0):
-    """
-        Input: 1 size 3 vector
-        Output: Scalar with the length of the vector
-    """
-    return (v0.x ** 2 + v0.y ** 2 + v0.z ** 2) ** 0.5
-
-
-def norm(v0):
-    """
-        Input: 1 size 3 vector
-        Output: Size 3 vector with the normal of the vector
-    """
-    v0length = length(v0)
-
-    if not v0length:
-        return V3(0, 0, 0)
-
-    return V3(v0.x / v0length, v0.y / v0length, v0.z / v0length)
-
-
-def bbox(*vertices):
-    xs = [vertex.x for vertex in vertices]
-    ys = [vertex.y for vertex in vertices]
-
-    xs.sort()
-    ys.sort()
-
-    xmin = xs[0]
-    xmax = xs[-1]
-    ymin = ys[0]
-    ymax = ys[-1]
-
-    return xmin, xmax, ymin, ymax
-
-
-def cross(v1, v2):
-    return V3(
-        v1.y * v2.z - v1.z * v2.y, v1.z * v2.x - v1.x * v2.z, v1.x * v2.y - v1.y * v2.x,
-    )
-
-
-def barycentric(A, B, C, P):
-    cx, cy, cz = cross(
-        V3(B.x - A.x, C.x - A.x, A.x - P.x), V3(B.y - A.y, C.y - A.y, A.y - P.y),
-    )
-
-    if abs(cz) < 1:
-        return -1, -1, -1
-
-    u = cx / cz
-    v = cy / cz
-    w = 1 - (cx + cy) / cz
-
-    return w, v, u
-
 
 class Render(object):
     # glInit dont needed, 'cause we have an __init__ func
@@ -126,6 +27,9 @@ class Render(object):
         self.zbuffer = [
             [-9999999 for x in range(self.width)] for y in range(self.height)
         ]
+        # For shader use
+        self.shape = None
+        self.light = ()
 
     def point(self, x, y, color):
         self.framebuffer[y][x] = color
@@ -156,7 +60,7 @@ class Render(object):
             [clearColor for x in range(self.width)] for y in range(self.height)
         ]
 
-    def triangle(self, A, B, C, color):
+    def triangle(self, A, B, C, normals):
         xmin, xmax, ymin, ymax = bbox(A, B, C)
 
         for x in range(xmin, xmax + 1):
@@ -167,73 +71,109 @@ class Render(object):
                     # point is outside
                     continue
 
-                z = A.z * w + B.z * v + C.z * u
+                z = A.z * u + B.z * v + C.z * w
+
+                r, g, b = self.shader(
+                    x,
+                    y,
+                    barycentricCoords = (u, v, w),
+                    normals=normals
+                )
+
+                shader_color = color(r, g, b)
 
                 if z > self.zbuffer[x][y]:
-                    self.point(x, y, color)
+                    self.point(x, y, shader_color)
                     self.zbuffer[x][y] = z
 
     def check_ellipse(self, x, y, a, b):
-        return ((x**2) * (b ** 2)) + ((y ** 2) * (a**2)) <= (a**2) * (b **2)
+        return round((x ** 2) * (b ** 2)) + ((y ** 2) * (a ** 2)) <= round(a ** 2) * (
+            b ** 2
+        )
 
-    def shader(self, shape=None, x=0, y=0):
+    def shader(self, x=0, y=0, barycentricCoords = (), normals=()):
         # Planet bounds:
         # Y: 240 - 560
-        if shape == PLANET:        
+
+        shader_color = 0, 0, 0
+        current_shape = self.shape 
+        u, v, w = barycentricCoords
+        na, nb, nc = normals
+
+        if current_shape == PLANET:
             if y < 280 or y > 520:
-                return color(156, 152, 164)
+                shader_color = 156, 152, 164
             elif y < 320 or y > 480:
-                return color(146, 160, 180)
+                shader_color = 146, 160, 180
             elif y < 360 or y > 420:
-                return color(105, 145, 170)
-            else: 
-                return color(136, 190, 222)
+                shader_color = 105, 145, 170
+            else:
+                shader_color = 136, 190, 222
         # Ring bounds:
         # X - Hole: 200 - 600
         # Y - Hole: 380 - 420
         # So, if we use the equation of an ellipse, where a > b
         # the value must be a=200 and b=20
-        elif shape == RING:
+        elif current_shape == RING:
             # Filling from inside to outside
             x0, y0 = x - 400, y - 400
-            a, b = 250, 25 
+            a, b = 250, 25
 
             # First ellipse
             is_ellipse = self.check_ellipse(x0, y0, a, b)
-            if is_ellipse :
-                return color(66, 76, 84)
-            
-            # Second ellipse
-            a += 50
-            b += 5  
-            is_ellipse = self.check_ellipse(x0, y0, a, b)
-            if is_ellipse :
-                return color(94, 102, 116)
+            if is_ellipse:
+                shader_color = 66, 76, 84
+            else:
+                # Second ellipse
+                a += 50
+                b += 5
+                is_ellipse = self.check_ellipse(x0, y0, a, b)
+                if is_ellipse:
+                    shader_color = 94, 102, 116
+                else:
+                    # Third ellipse
+                    a += 25
+                    b += 5
+                    is_ellipse = self.check_ellipse(x0, y0, a, b)
+                    if is_ellipse:
+                        shader_color = 0, 0, 0
+                    else:
+                        # Fourth ellipse
+                        a += 75
+                        b += 10
+                        is_ellipse = self.check_ellipse(x0, y0, a, b)
+                        if is_ellipse:
+                            shader_color = 62, 72, 78
 
-            # Third ellipse
-            a += 25
-            b += 5  
-            is_ellipse = self.check_ellipse(x0, y0, a, b)
-            if is_ellipse :
-                return color(0, 0, 0)
+        b, g, r = shader_color
 
+        b /= 255
+        g /= 255
+        r /= 255
 
-            # Fourth ellipse
-            a += 75
-            b += 10 
-            is_ellipse = self.check_ellipse(x0, y0, a, b)
-            if is_ellipse :
-                return color(62, 72, 78)
-            
-            return color(0, 0, 0)
-            
+        nx = na[0] * u + nb[0] * v + nc[0] * w
+        ny = na[1] * u + nb[1] * v + nc[1] * w
+        nz = na[2] * u + nb[2] * v + nc[2] * w
+
+        normal = V3(nx, ny, nz)
+        light = V3(0.700, 0.700, 0.750)
+
+        intensity = dot(norm(normal), norm(light))
+
+        b *= intensity
+        g *= intensity
+        r *= intensity
+
+        if intensity > 0:
+            return r, g, b
         else:
-            return color(0, 0, 0)
+            return 0,0,0
 
     def load(self, filename="default.obj", translate=[0, 0], scale=[1, 1], shape=None):
         model = Obj(filename)
+        self.shape = shape
 
-        light = V3(0.7, 0.7, 0.5)
+        #light = V3(0.7, 0.7, 0.5)
 
         for face in model.faces:
             vcount = len(face)
@@ -263,18 +203,11 @@ class Render(object):
                 b = V3(x2, y2, z2)
                 c = V3(x3, y3, z3)
 
-                # Shading
-                x = min([x1, x2, x3])
-                y = min([y1, y2, y3])
-                shader = self.shader(shape, x, y)
+                vn0 = model.normals[face1]
+                vn1 = model.normals[face2]
+                vn2 = model.normals[face3]
 
-                normal = cross(sub(b, a), sub(c, a))
-                intensity = dot(norm(normal), norm(light))
-                #intensity = 1
-                colors = [(round(i * intensity) if i * intensity > 0 else 10)  for i in shader]
-                flat_color = color(colors[0], colors[1], colors[2])
-
-                self.triangle(a, b, c, flat_color)
+                self.triangle(a, b, c, normals=(vn0, vn1, vn2))
 
             else:
                 face1 = face[0][0] - 1
@@ -308,19 +241,13 @@ class Render(object):
                 c = V3(x3, y3, z3)
                 d = V3(x4, y4, z4)
 
-                # Shading
-                x = min([x1, x2, x3, x4])
-                y = min([y1, y2, y3, y4])
-                shader = self.shader(shape, x, y)
+                vn0 = model.normals[face1]
+                vn1 = model.normals[face2]
+                vn2 = model.normals[face3]
+                vn3 = model.normals[face4]
 
-                normal = cross(sub(b, a), sub(c, a))
-                intensity = dot(norm(normal), norm(light))
-                #intensity = 1
-                colors = [(round(i * intensity) if i * intensity > 0 else 10)  for i in shader]
-                flat_color = color(colors[0], colors[1], colors[2])
-
-                self.triangle(a, b, c, flat_color)
-                self.triangle(a, c, d, flat_color)
+                self.triangle(a, b, c, normals=(vn0, vn1, vn2))
+                self.triangle(a, c, d, normals=(vn0, vn2, vn3))
 
     def finish(self, filename="out.bmp"):
         # starts creating a new bmp file
