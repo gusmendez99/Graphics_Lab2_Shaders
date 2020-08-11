@@ -5,12 +5,19 @@
     gl.py - all logic to create a bmp file
 """
 
-from utils.color import *
-from utils.math import *
-from utils.encoder import *
-from utils.constants import *
+from utils.color import color, normalize_color
+from utils.math import barycentric, bbox, cross, dot, V2, V3, norm
+from utils.encoder import char, dword, word
+from utils.constants import PLANET, RING
+from math import sqrt
 
 from obj import Obj
+
+BLACK = 0, 0, 0
+# Saturn color intervals, up to center
+MELON = 136, 195, 222
+BROWN = 105, 145, 170
+LAVENDER = 156, 152, 164
 
 class Render(object):
     # glInit dont needed, 'cause we have an __init__ func
@@ -25,11 +32,10 @@ class Render(object):
         self.clear()
 
         self.zbuffer = [
-            [-9999999 for x in range(self.width)] for y in range(self.height)
+            [-float('inf') for x in range(self.width)] for y in range(self.height)
         ]
         # For shader use
         self.shape = None
-        self.light = ()
 
     def point(self, x, y, color):
         self.framebuffer[y][x] = color
@@ -46,21 +52,22 @@ class Render(object):
         self.viewport_width = width
 
     def clear(self):
-        BLACK = color(0, 0, 0)
+        r, g, b = BLACK
+        bg_color = color(r, g, b)
         self.framebuffer = [
-            [BLACK for x in range(self.width)] for y in range(self.height)
+            [bg_color for x in range(self.width)] for y in range(self.height)
         ]
 
     def clear_color(self, r=1, g=1, b=1):
         # get normalized colors as array
-        normalized = normalizeColorArray([r, g, b])
+        normalized = normalize_color([r, g, b])
         clearColor = color(normalized[0], normalized[1], normalized[2])
 
         self.framebuffer = [
             [clearColor for x in range(self.width)] for y in range(self.height)
         ]
 
-    def triangle(self, A, B, C, normals):
+    def triangle(self, A, B, C):
         xmin, xmax, ymin, ymax = bbox(A, B, C)
 
         for x in range(xmin, xmax + 1):
@@ -74,41 +81,89 @@ class Render(object):
                 z = A.z * u + B.z * v + C.z * w
 
                 r, g, b = self.shader(
-                    x,
-                    y,
-                    barycentricCoords = (u, v, w),
-                    normals=normals
+                    x, y
                 )
 
                 shader_color = color(r, g, b)
 
-                if z > self.zbuffer[x][y]:
+                if z > self.zbuffer[y][x]:
                     self.point(x, y, shader_color)
-                    self.zbuffer[x][y] = z
+                    self.zbuffer[y][x] = z
 
     def check_ellipse(self, x, y, a, b):
         return round((x ** 2) * (b ** 2)) + ((y ** 2) * (a ** 2)) <= round(a ** 2) * (
             b ** 2
         )
 
-    def shader(self, x=0, y=0, barycentricCoords = (), normals=()):
-        # Planet bounds:
-        # Y: 240 - 560
+    def radius(self,x,y):
+        return int(sqrt(x*x + y*y))
 
-        shader_color = 0, 0, 0
-        current_shape = self.shape 
-        u, v, w = barycentricCoords
-        na, nb, nc = normals
+    def shader(self, x=0, y=0):
+        # Planet bounds:
+        # Y: 275 - 525
+
+        shader_color = BLACK
+        current_shape = self.shape
+
+        # For gradient color
+        r1, g1, b1 = BLACK
+        r2, g2, b2 = BLACK
+        percentage = 1
 
         if current_shape == PLANET:
-            if y < 280 or y > 520:
-                shader_color = 156, 152, 164
-            elif y < 320 or y > 480:
-                shader_color = 146, 160, 180
-            elif y < 360 or y > 420:
-                shader_color = 105, 145, 170
-            else:
-                shader_color = 136, 190, 222
+            if y >= 375 and y <= 425:
+                r1, g1, b1 = MELON
+                r2, g2, b2 = BROWN
+                percentage = abs(y - 400)
+
+            if (y > 325 and y < 375) or (y > 425 and y < 475):
+                if y < 450 or y > 350:
+                    r1, g1, b1 = MELON
+                    r2, g2, b2 = BROWN
+                    percentage = abs(y - 400)
+
+                if y >= 450 or y <= 350:
+                    r1, g1, b1 = BROWN
+                    r2, g2, b2 = LAVENDER
+                    if y >= 450:
+                        percentage = abs(y - 450)
+                    else:
+                        percentage = abs(y - 350)
+
+            if (y <= 325 and y >= 260) or (y <= 540 and y >= 475):
+                if y < 500 or y > 300:
+                    r1, g1, b1 = BROWN
+                    r2, g2, b2 = LAVENDER                    
+                    if y <= 325:
+                        percentage = abs(y - 350)
+                    else:
+                        percentage = abs(y - 450)
+
+                if y >= 500 or y <= 300:
+                    r1, g1, b1 = LAVENDER
+                    r2, g2, b2 = LAVENDER
+                    if y <= 300:
+                        percentage = abs(y - 300)
+                    else:
+                        percentage = abs(y - 500)
+
+                
+            # Gradient Function
+            percentage = (percentage / 50)
+            r = r1 + percentage * (r2 - r1)
+            g = g1 + percentage * (g2 - g1)
+            b = b1 + percentage * (b2 - b1)
+            shader_color = r, g, b
+
+
+            # Saturn gradient lines
+            if (y % 40) in range(0, 14):
+                r, g, b = shader_color
+                r *= 0.98
+                g *= 0.98
+                b *= 0.98
+                shader_color = r, g, b
+
         # Ring bounds:
         # X - Hole: 200 - 600
         # Y - Hole: 380 - 420
@@ -125,40 +180,42 @@ class Render(object):
                 shader_color = 66, 76, 84
             else:
                 # Second ellipse
-                a += 50
+                a += 70
                 b += 5
                 is_ellipse = self.check_ellipse(x0, y0, a, b)
                 if is_ellipse:
                     shader_color = 94, 102, 116
                 else:
                     # Third ellipse
-                    a += 25
+                    a += 8
                     b += 5
                     is_ellipse = self.check_ellipse(x0, y0, a, b)
                     if is_ellipse:
                         shader_color = 0, 0, 0
                     else:
                         # Fourth ellipse
-                        a += 75
+                        a += 65
                         b += 10
                         is_ellipse = self.check_ellipse(x0, y0, a, b)
                         if is_ellipse:
                             shader_color = 62, 72, 78
 
-        b, g, r = shader_color
+            # Saturn gradient lines
+            
 
+        b, g, r = shader_color
         b /= 255
         g /= 255
         r /= 255
 
-        nx = na[0] * u + nb[0] * v + nc[0] * w
-        ny = na[1] * u + nb[1] * v + nc[1] * w
-        nz = na[2] * u + nb[2] * v + nc[2] * w
+        intensity = 1
 
-        normal = V3(nx, ny, nz)
-        light = V3(0.700, 0.700, 0.750)
-
-        intensity = dot(norm(normal), norm(light))
+        if current_shape == RING:
+            intensity = self.radius(x - 400, y - 450) / 400
+            intensity = 1 - (intensity * 0.90) ** 4
+        elif current_shape == PLANET:
+            intensity = (self.radius(x - 620, y - 590) + 50) / 400
+            intensity = 1 - (intensity * 0.95) ** 4
 
         b *= intensity
         g *= intensity
@@ -167,13 +224,13 @@ class Render(object):
         if intensity > 0:
             return r, g, b
         else:
-            return 0,0,0
+            return 0, 0, 0
 
     def load(self, filename="default.obj", translate=[0, 0], scale=[1, 1], shape=None):
         model = Obj(filename)
         self.shape = shape
 
-        #light = V3(0.7, 0.7, 0.5)
+        # light = V3(0.7, 0.7, 0.5)
 
         for face in model.faces:
             vcount = len(face)
@@ -203,11 +260,11 @@ class Render(object):
                 b = V3(x2, y2, z2)
                 c = V3(x3, y3, z3)
 
-                vn0 = model.normals[face1]
-                vn1 = model.normals[face2]
-                vn2 = model.normals[face3]
+                vn0 = model.normals[face[0][2] - 1]
+                vn1 = model.normals[face[1][2] - 1]
+                vn2 = model.normals[face[2][2] - 1]
 
-                self.triangle(a, b, c, normals=(vn0, vn1, vn2))
+                self.triangle(a, b, c)
 
             else:
                 face1 = face[0][0] - 1
@@ -241,13 +298,8 @@ class Render(object):
                 c = V3(x3, y3, z3)
                 d = V3(x4, y4, z4)
 
-                vn0 = model.normals[face1]
-                vn1 = model.normals[face2]
-                vn2 = model.normals[face3]
-                vn3 = model.normals[face4]
-
-                self.triangle(a, b, c, normals=(vn0, vn1, vn2))
-                self.triangle(a, c, d, normals=(vn0, vn2, vn3))
+                self.triangle(a, b, c)
+                self.triangle(a, c, d)
 
     def finish(self, filename="out.bmp"):
         # starts creating a new bmp file

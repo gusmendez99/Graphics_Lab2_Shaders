@@ -10,5 +10,18 @@ from utils.constants import *
 
 render = Render()
 render.load("./ring.obj", translate=(400, 400, 0), scale=(220, 75, 200), shape=RING)
-render.load("./sphere.obj", translate=(400, 400, 0), scale=(250, 250, 350), shape=PLANET)
+render.load(
+    "./sphere.obj", translate=(400, 400, 0), scale=(250, 250, 350), shape=PLANET
+)
 render.finish(filename="saturn.bmp")
+
+""" 
+    New implementations:
+
+    self.active_vertex_array
+    render.draw_arrays('TRIANGLES')
+
+    - transform
+    - draw_array (if i want just wireframe)
+
+"""
